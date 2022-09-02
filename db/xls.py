@@ -59,14 +59,14 @@ class Xlsx:
             stop = True
         return self._row_names
 
-    def load_columns(self, obj: callable) -> list:
+    def load_columns(self, obj: callable, *args, **kwargs) -> list:
         """ Generate an object for each column where each row is a (potential) parameter:
         name    foo     bar
         color   red     black
         flavor  cherry  raspberry
         ---
-        obj(**{name: foo, color: red, flavor: cherry}),
-        obj(**{name: bar, color: black, flavor: raspberry}),
+        obj(**{name: foo, color: red, flavor: cherry}, _file=FILENAME, _column=int(column)),
+        obj(**{name: bar, color: black, flavor: raspberry}, _file=FILENAME, _column=int(column)),
         """
 
         # load the 1st column using names (or Name)
@@ -78,7 +78,7 @@ class Xlsx:
                 if not v:
                     continue
                 vals[f"{n}:{v}"] = ws.cell(row=n+1, column=col).value
-            return obj(**vals)
+            return obj(*args, **kwargs, **vals)
 
         return [build_object(col, obj=obj) for col in range(2, self.max_column)]
 

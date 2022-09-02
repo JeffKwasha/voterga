@@ -1,14 +1,6 @@
 import re
 from typing import List, Any, Iterable
-import logging
-
-
-def first(di: dict, default=None):
-    try:
-        return next(iter(di.items()))
-    except StopIteration:
-        pass
-    return default
+from util import first, longest, logging
 
 
 class Fields(dict):
@@ -54,7 +46,6 @@ class Fields(dict):
         elif type(item) is dict:
             return self.search(first(item), best_match)
         return super().get(item)
-        # raise ValueError(f"Search hates you")
 
     def __add__(self, other: Any):
         exists = self.search(other)
@@ -129,7 +120,9 @@ class Name(str):
     @classmethod
     def add(cls, name: str, pattern: re.Pattern = None):
         """ searches for existing name match or create a Name if nothing matches """
-        name = name.strip()
+        if type(name) is Name:
+            raise ValueError(f"{name} is already a name")
+        name = name.strip() if name else None
         rv = cls.search(name, best_match=True)
         if rv:
             return rv
@@ -146,13 +139,15 @@ class Name(str):
         return super().__new__(cls, name)
 
     def __init__(self, name: str, pattern: re.Pattern = None, flags: re.RegexFlag = re.IGNORECASE):
-        self.pattern = None
-        if name:
-            self.pattern = re.compile(pattern, flags=flags) if pattern else re.compile(fr'(.*\s)?{name}(\s.*)?', flags=flags)
+        self.pattern = pattern
+        if name and type(pattern) is not re.Pattern:
+            self.set_pattern(pattern, flags)
         self._all.add(self)
 
-    def set_pattern(self, pattern: str):
-        self.pattern = re.compile(pattern)
+    def set_pattern(self, pattern: str or None, flags: re.RegexFlag = re.IGNORECASE):
+        if pattern is None:
+            pattern = fr'.*\b{str(self)}\b.*'
+        self.pattern = re.compile(pattern, flags)
 
     def __eq__(self, other):
         if not isinstance(other, str):
@@ -177,9 +172,18 @@ class Name(str):
     def __class_getitem__(cls, item):
         return cls._all.search(item)
 
-    def match(self, item) -> re.Match:
-        if self.pattern:
-            return self.pattern.fullmatch(item)
+    def match(self, item, best_match: bool = True) -> re.Match or list:
+        if isinstance(item, str):
+            return self._match_str(item)
+        matches = [hk for hk in item if self._match_str(item)]
+        if not best_match:
+            return matches
+        return longest(matches)
+
+    def _match_str(self, item) -> re.Match:
+        if not self.pattern:
+            return re.fullmatch(str(self), item)
+        return self.pattern.fullmatch(item)
 
     def fullmatch(self, item) -> re.Match:
         if self.pattern:
@@ -194,11 +198,14 @@ class Name(str):
         if isinstance(haystack, dict):
             val = haystack.pop(self, None)
             if val is None:
-                val = haystack.pop(str(self), None)
+                key = longest([hk for hk in haystack.keys() if self.match(hk)])
+                val = haystack.pop(key, None)
             return val
         elif isinstance(haystack, (tuple, list)):
             i = haystack.index(self)
-            return haystack.pop(i) if i >= 0 else None
+            if i >= 0:
+                return haystack.pop(i)
+            longest([hk for hk in haystack if self.match(hk)])
         elif isinstance(haystack, set):
             if self in haystack:
                 haystack.remove(self)

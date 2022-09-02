@@ -41,11 +41,10 @@ class Contest:
         Contest._all[self.name] = self
         kwargs = {k.lower(): v for k, v in kwargs.items()}
 
-        def do_votetype(name: str, choice: str, votes, precincts: list):
+        def do_votetype(vote_type: str, choice: Name, votes, precincts: List[dict]):
             if type(precincts) is not list:
                 precincts = [precincts]
-            vote_type = Name.add(name.lower())
-            choice = Name.add(choice)
+            vote_type = vote_type if type(vote_type) is Name else Name.add(vote_type.lower())
             self.vote_type[(choice, vote_type)] = int(votes)
             for precinct in precincts:
                 name = Name.add(precinct['@name'])
@@ -54,7 +53,7 @@ class Contest:
 
         if 'votetype' in kwargs:
             for vt in kwargs['votetype']:
-                do_votetype(name=vt['@name'], choice=Name(None), votes=vt['@votes'], precincts=vt['Precinct'])
+                do_votetype(vote_type=vt['@name'], choice=Name[None], votes=vt['@votes'], precincts=vt['Precinct'])
         if 'choices' in kwargs:
             choices = kwargs['choices']
             if type(choices) is not list:
@@ -64,7 +63,7 @@ class Contest:
                 # party = Name.add(choice['@party'])
                 self.totals[name] = int(choice['@totalVotes'])
                 for vt in choice['VoteType']:
-                    do_votetype(name=vt['@name'], choice=name, votes=vt['@votes'], precincts=vt['Precinct'])
+                    do_votetype(vote_type=vt['@name'], choice=name, votes=vt['@votes'], precincts=vt['Precinct'])
 
     @property
     def timestamp(self):

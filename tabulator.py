@@ -7,6 +7,9 @@ from db.xls import Xlsx
 import logging
 from datetime import datetime
 from pytz import utc
+_SPLIT_RE = re.compile(r'[- ]+')
+Name.add('write-in', re.compile(r'write[- ]*in\b]', flags=re.IGNORECASE))
+Name.add('total votes', re.compile(r'total[- ]*votes\b', flags=re.IGNORECASE))
 
 
 def now():
@@ -16,8 +19,13 @@ def now():
 class Tabulator:
     """ A printout of tabulated results that should correspond with precinct results"""
     _all = {}
+    _by_location = {}
 
     def __init__(self, **kwargs):
+        """ build a tabulator from kwargs:
+         Name, ID, 'Total Scanned', Counter, _file, _column
+         Location - split into: locations=tuple( re.split[- ] )
+        """
         def pop_pattern(pattern: str, ignore_case=True):
             p = re.compile(pattern, flags=(ignore_case and re.IGNORECASE))
             for key in kwargs:
@@ -25,7 +33,7 @@ class Tabulator:
                     return kwargs.pop(key)
         self.name = pop_pattern(r'.*\bName\b.*').strip()
         self.id = pop_pattern(r'.*\bID\b.*')
-        self.location = pop_pattern(r'.*\bLocation\b.*').strip()
+        self.locations = tuple(_SPLIT_RE.split(pop_pattern(r'.*\bLocation\b.*').strip()))
         self.total_scanned = pop_pattern(r'.*\bTotal Scanned\b.*')
         self.protective_counter = pop_pattern(r'.*\bCounter\b.*')
         self._file = pop_pattern(r'_file')
@@ -35,7 +43,23 @@ class Tabulator:
         # Now that all kwargs other than races have been removed, parse the races
         self.races = self.parse_races(kwargs)
 
-        self._all[self.key] = self
+        cls = self.__class__
+        cls._all[self._key] = self
+
+    @classmethod
+    def by_location(cls, li: Iterable['Tabulator']) -> dict:
+        """ :returns { location(str): Tabulator,... for each li}"""
+
+        def _add_location(loc, tab):
+            rv.setdefault(loc, set()).add(tab)
+
+        rv = {}
+        for tab in li:
+            if len(tab.locations) > 1:
+                _add_location(tab.locations, tab)
+            for loc in tab.locations:
+                _add_location(loc, tab)
+        return rv
 
     def log(self, msg: str, level: int = logging.INFO, **kwargs):
         key = (now(), level)
@@ -55,25 +79,27 @@ class Tabulator:
 
     @property
     def errors(self) -> Iterable:
+        if not self._errors:
+            return []
         return self._errors.values()
 
-    def parse_races(self, kwargs: dict):
+    def parse_races(self, kwargs: dict) -> dict:
         """ kwargs is ordered dict of races, candidates and votes from a tally tape:
         {   '4:President of the US': None,
-            '5:Trump': 123,
-            '6:Biden': 321,
-            '7:Jorgensen': 2,
+            '5:Hodge': 123,
+            '6:Podge': 321,
+            '7:Borgensen': 2,
             '8:Write-in': 0,
             '9:Senate Seat 1': None,
-        ... }
-        The number is the row from the xlsx
+            ... }
+        The number is the row from the xlsx just to ensure uniqueness
         """
         accept = re.compile(r'\d+:.+')
         races, race_name = {}, ''
         for colA, val in kwargs.items():
             if not accept.fullmatch(colA):
                 continue
-            row, name = (f.strip() for f in colA.split(':'))
+            row, name = (f.strip() for f in colA.split(':', 1))
             row = int(row)
 
             # Names of races don't have vote counts
@@ -91,8 +117,11 @@ class Tabulator:
         return races
 
     @property
-    def key(self):
-        return f"{self.id}:{self.name}"
+    def _key(self):
+        return self.name
+
+    def __hash__(self):
+        return hash(self.name)
 
     def __str__(self):
         return f"{self.name} <{self.id}> {self.races}"
@@ -115,7 +144,7 @@ class Tabulator:
         return self._validate_races(level)
 
 
-def load_tapes_xlsx(path: Path):
+def load_tabulators(path: Path):
     xlsx_files = path.glob('*.xlsx')
     di = {}
     for file in xlsx_files:
