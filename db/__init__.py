@@ -1,67 +1,100 @@
 import re
-from typing import List, Any, Iterable
-from util import first, longest, logging
+import yaml
+from pathlib import Path
+from typing import Any, Iterable
+from util import first, longest, LogSelf, dict_sum, dict_diff
+from collections import namedtuple
+
+SearchResult = namedtuple('SearchResult', field_names=('name', 'value'), defaults=(None, None))
+SearchResult.__bool__ = lambda t: bool(t[0])
+NOT_FOUND = SearchResult('', None)
 
 
 class Fields(dict):
     """ a list of names to be loaded from a source """
-    def __init__(self, fields: Any = ()):
-        """ create a 'fields' which is a dict of names that performs matching apart from the Name Class"""
-        if isinstance(fields, dict):
-            fields = list(Name(n.strip(), p) for n, p in fields.items())
-        elif isinstance(fields, (set, list)):
-            if all([isinstance(f, str) for f in fields]):
-                fields = list(Name(f.strip()) for f in fields)
-            elif all([type(f) is tuple and 0 < len(f) < 3 for f in fields]):
-                fields = list(Name(*f) for f in fields)
-        elif type(fields) is tuple:
-            fields = Name(*fields) if 0 < len(fields) <= 2 else ()
-        elif isinstance(fields, str):
-            fields = [Name(fields.strip())]
-        super().__init__()
-        for name in fields:
-            if name in self:
-                raise ValueError(f"Collision initializing fields: {name} exists with patterns"
-                                 f"{name.pattern}/{self[name].pattern}")
-            self[name] = name
+    _all: 'Fields' = None
 
-    def search(self, item, best_match: bool = True):
-        if isinstance(item, str):
-            item = item.strip()
-            rv = super().get(item)
-            if rv:
-                return rv
-            best = ''
-            for k in self:
-                if k == item:
+    def __init__(self, fields: Any = (), name: str = None, filename: Path or str = None):
+        """ create a 'fields' dict with Names for keys, allowing field['string'] to return as if field['THE_STRING']
+            keys can be non strings - especially tuples, but lookups of non-string keys require exact matches
+        """
+        super().__init__()
+        self.name = name
+        self.add_all(fields)
+        if filename:
+            if type(filename) is not Path:
+                filename = Path(filename).expanduser()
+            with open(filename, 'r') as f:
+                self.add_all(yaml.safe_load(f))
+        if not name:
+            return
+        if Fields._all is None:
+            Fields._all = Fields()
+        if name in Fields._all:
+            raise NameError(f"Collision with existing Fields")
+        Fields._all[name] = self
+
+    def search(self, key, best_match: bool = True) -> SearchResult:
+        best = NOT_FOUND
+        if isinstance(key, str):
+            key = key.strip()
+            for k, v in self.items():
+                if k == key:
+                    if len(k) > len(best[0]):
+                        best = SearchResult(k, v)
                     if not best_match:
-                        return k
-                    elif len(k) > len(best):
-                        best = k
-            return super().__getitem__(best) if best else None
-        elif type(item) is tuple:
-            if len(item) <= 2:
-                return self.search(item[0], best_match)
-            raise ValueError("Search for an incompatible tuple")
-        elif type(item) is dict:
-            return self.search(first(item), best_match)
-        return super().get(item)
+                        break
+            return best
+        elif type(key) is re.Pattern:
+            for k, v in self.items():
+                if key.match(str(k)):
+                    if not best_match:
+                        return v
+                    elif len(k) > len(best[0]):
+                        best = SearchResult(k, v)
+            return best
+        elif type(key) is dict:
+            return self.search(first(key), best_match)
+        else:
+            v = super().get(key, NOT_FOUND)
+            if v:
+                return key, v
+        return NOT_FOUND
 
     def __add__(self, other: Any):
+        # Fields() + Fields() returns a new combined Fields
         exists = self.search(other)
-        if exists is not None:
-            return exists
-        rv = Fields(self)
+        if exists:
+            return exists[0]
+        rv = Fields(name=None, fields=self)
         if isinstance(other, Name):
-            rv[other] = other
+            rv[other] = None
         elif type(other) is tuple and len(other) == 2:
-            rv[other[0]] = Name(*other)
-        elif type(other) is dict and len(other) == 1:
-            other = Name(*first(other))
-            rv[other] = other
+            rv[Name(*other)] = None
+        elif type(other) is dict:
+            if 'pattern' in other:
+                rv[Name(**other)] = None
+            else:
+                rv.add_all(other)
         else:
             ValueError(f"add hates you {other}")
         return rv
+
+    def add_all(self, fields) -> int:
+        if isinstance(fields, str):
+            fields = [fields]
+        elif isinstance(fields, dict):
+            for k, v in fields.items():
+                self.add(key=k, value=v)
+            return len(fields)
+        for f in fields:
+            if isinstance(f, dict):
+                self.add(**f)
+            elif isinstance(f, str):
+                self.add(key=f)
+            elif isinstance(f, (tuple, list)):
+                self.add(*f)
+        return len(fields)
 
     def _get(self, other: Any, default=None):
         try:
@@ -70,25 +103,22 @@ class Fields(dict):
             pass
         return default
 
-    def add(self, other: Any, value=None, best_match: bool = True):
-        rv = self.search(other, best_match=best_match)
-        if rv is not None:
-            self[rv] = value
-            return rv
-        if not isinstance(other, Name):
-            other = Name(other)
-        super().__setitem__(other, value)
-        return other
+    def add(self, key: Any, value=None, pattern: re.Pattern or str = None, best_match: bool = True) -> 'Name':
+        rv = self.search(key, best_match=best_match)
+        if not rv:
+            rv = (key, rv[1]) if isinstance(key, Name) or type(key) is tuple else (Name(key, pattern), None)
+        super().__setitem__(rv[0], value if value is not None else rv[1])
+        return rv[0]
 
-    def append(self, other, value=None, best_match: bool = True):
-        return self.add(other, value, best_match)
+    def append(self, key, value=None, best_match: bool = True):
+        return self.add(key, value, best_match)
 
-    def build(self, item: str, obj: callable, *args, **kwargs):
-        """ If item is not already present, call obj with args, kwargs and store/return the result """
-        rv = self.search(item)
+    def build(self, name: str, obj: callable, *args, **kwargs):
+        """ If name is not already present, call obj with args, kwargs and store/return the result """
+        rv = self.search(name)[1]
         if rv is not None:
             return rv
-        self[item] = rv = obj(*args, **kwargs)
+        self[name] = rv = obj(*args, **kwargs)
         return rv
 
     def __setitem__(self, item: str, value):
@@ -97,7 +127,12 @@ class Fields(dict):
         super().__setitem__(item, value)
 
     def __getitem__(self, item):
-        rv = self.search(item, best_match=False)
+        try:
+            rv = super().__getitem__(item)
+            return rv
+        except KeyError:
+            pass
+        rv = self.search(item, best_match=False)[1]
         if rv is not None:
             return rv
         raise KeyError(repr(item))
@@ -105,7 +140,15 @@ class Fields(dict):
     def __contains__(self, item):
         if super().__contains__(item):
             return True
-        return bool(self.search(item, best_match=False))
+        return bool(self.search(item, best_match=False)[0])
+
+    def __class_getitem__(cls, item: str) -> 'Fields':
+        if not item:
+            raise ValueError(f"{item} isn't valid")
+        rv = Fields._all.search(item)
+        if rv:
+            return rv[1]
+        return Fields(name=item)
 
 
 class Name(str):
@@ -118,45 +161,47 @@ class Name(str):
     _all = Fields()
 
     @classmethod
-    def add(cls, name: str, pattern: re.Pattern = None):
+    def add(cls, name: str or tuple, pattern: re.Pattern = None):
         """ searches for existing name match or create a Name if nothing matches """
+        if type(name) is tuple:   ## and all(type(n) is Name for n in name):
+            return name
         if type(name) is Name:
             raise ValueError(f"{name} is already a name")
         name = name.strip() if name else None
         rv = cls.search(name, best_match=True)
         if rv:
             return rv
-        return Name(name, pattern=pattern)
+        rv = Name(name, pattern=pattern)
+        cls._all[rv] = None
+        return rv
 
     def __new__(cls, name: str, pattern: re.Pattern = None, flags: re.RegexFlag = re.IGNORECASE):
         """ create a name as long as the_exact_string doesn't already exist """
         name = name.strip() if type(name) is str else name
         rv = cls._all.get(name)
         if rv is not None:
-            if pattern and not rv.pattern:
+            if pattern:
                 rv.set_pattern(pattern)
             return rv
         return super().__new__(cls, name)
 
-    def __init__(self, name: str, pattern: re.Pattern = None, flags: re.RegexFlag = re.IGNORECASE):
+    def __init__(self, name: str, pattern: str or re.Pattern = None, flags: re.RegexFlag = re.IGNORECASE):
         self.pattern = pattern
         if name and type(pattern) is not re.Pattern:
             self.set_pattern(pattern, flags)
-        self._all.add(self)
 
     def set_pattern(self, pattern: str or None, flags: re.RegexFlag = re.IGNORECASE):
         if pattern is None:
-            pattern = fr'.*\b{str(self)}\b.*'
+            pattern = fr'{str(self)}\b.*'
         self.pattern = re.compile(pattern, flags)
 
-    def __eq__(self, other):
-        if not isinstance(other, str):
-            other = str(other)
-        if super().__eq__(other):
+    def __eq__(self, other: str) -> bool:
+        other = str(other)
+        if other == str(self):
             return True
-        if self.pattern and self.pattern.fullmatch(other):
-            return True
-        return False
+        if not self.pattern:
+            return False
+        return bool(self.pattern.fullmatch(other))
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -166,28 +211,17 @@ class Name(str):
         return hash(str(self))
 
     @classmethod
-    def search(cls, item, best_match: bool = True):
+    def search(cls, item, best_match: bool = True) -> ('Name', Any):
         return cls._all.search(item, best_match=best_match)
 
-    def __class_getitem__(cls, item):
-        return cls._all.search(item)
+    def __class_getitem__(cls, item) -> Any:
+        return cls._all.search(item)[1]
 
-    def match(self, item, best_match: bool = True) -> re.Match or list:
-        if isinstance(item, str):
-            return self._match_str(item)
-        matches = [hk for hk in item if self._match_str(item)]
-        if not best_match:
-            return matches
-        return longest(matches)
+    def match(self, item) -> re.Match:
+        return self.pattern.fullmatch(str(item))
 
-    def _match_str(self, item) -> re.Match:
-        if not self.pattern:
-            return re.fullmatch(str(self), item)
+    def _match_str(self, item: str) -> re.Match:
         return self.pattern.fullmatch(item)
-
-    def fullmatch(self, item) -> re.Match:
-        if self.pattern:
-            return self.pattern.fullmatch(item)
 
     def __repr__(self):
         return str(self)
@@ -198,14 +232,14 @@ class Name(str):
         if isinstance(haystack, dict):
             val = haystack.pop(self, None)
             if val is None:
-                key = longest([hk for hk in haystack.keys() if self.match(hk)])
+                key = longest([hk for hk in haystack.keys() if self == hk])
                 val = haystack.pop(key, None)
             return val
         elif isinstance(haystack, (tuple, list)):
             i = haystack.index(self)
             if i >= 0:
                 return haystack.pop(i)
-            longest([hk for hk in haystack if self.match(hk)])
+            longest([hk for hk in haystack if self == hk])
         elif isinstance(haystack, set):
             if self in haystack:
                 haystack.remove(self)

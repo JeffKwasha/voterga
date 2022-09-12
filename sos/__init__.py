@@ -1,6 +1,8 @@
 
 def property_dict(**kwargs):
-    """ returns the properties from an xml_to_dict """
+    """ returns the properties from an xml_to_dict 
+        { "@property": value, "other": value }
+    """
     rv = {}
     if not kwargs:
         return rv
