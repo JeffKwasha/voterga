@@ -1,3 +1,6 @@
+""" Objects for representing data:
+"""
+
 import re
 import yaml
 from pathlib import Path
@@ -11,7 +14,9 @@ NOT_FOUND = SearchResult('', None)
 
 
 class Fields(dict):
-    """ a list of names to be loaded from a source """
+    """ a Dictionary that uses Name for keys instead of str
+    ex: print(Fields({Name('Joe Biden', r'.*\b(brandon|biden)\b.*'): 'y.k.t.t.' })['biden'] == 'y.k.t.t.')
+    """
     _all: 'Fields' = None
 
     def __init__(self, fields: Any = (), name: str = None, filename: Path or str = None):
@@ -103,15 +108,15 @@ class Fields(dict):
             pass
         return default
 
-    def add(self, key: Any, value=None, pattern: re.Pattern or str = None, best_match: bool = True) -> 'Name':
+    def add(self, key: Any, value=None, pattern: re.Pattern or str = '', best_match: bool = True) -> 'Name':
         rv = self.search(key, best_match=best_match)
         if not rv:
             rv = (key, rv[1]) if isinstance(key, Name) or type(key) is tuple else (Name(key, pattern), None)
         super().__setitem__(rv[0], value if value is not None else rv[1])
         return rv[0]
 
-    def append(self, key, value=None, best_match: bool = True):
-        return self.add(key, value, best_match)
+    def append(self, key, value=None, pattern: re.Pattern or str = '', best_match: bool = True):
+        return self.add(key, value, pattern, best_match=best_match)
 
     def build(self, name: str, obj: callable, *args, **kwargs):
         """ If name is not already present, call obj with args, kwargs and store/return the result """
@@ -152,12 +157,15 @@ class Fields(dict):
 
 
 class Name(str):
-    """ Names of candidates, races, etc.. will not match exactly
+    """ A magic string that compares based on a regex
+    Names of candidates, races, etc.. will not match exactly
     - trim spaces
     - recognize variations based on regex
     - use slots as this needs to act like a string
+
+    print(Name('Trump') == 'Donald Trump')
     """
-    __slots__ = ['pattern']
+    __slots__ = ['_pattern']
     _all = Fields()
 
     @classmethod
@@ -185,23 +193,24 @@ class Name(str):
             return rv
         return super().__new__(cls, name)
 
-    def __init__(self, name: str, pattern: str or re.Pattern = None, flags: re.RegexFlag = re.IGNORECASE):
-        self.pattern = pattern
-        if name and type(pattern) is not re.Pattern:
-            self.set_pattern(pattern, flags)
+    def __init__(self, name: str, pattern: str or re.Pattern = '', flags: re.RegexFlag = re.IGNORECASE):
+        self.set_pattern(pattern, flags)
 
     def set_pattern(self, pattern: str or None, flags: re.RegexFlag = re.IGNORECASE):
         if pattern is None:
-            pattern = fr'{str(self)}\b.*'
-        self.pattern = re.compile(pattern, flags)
+            self._pattern = pattern             # None is allowed: it prevents fancy matching
+            return
+        if not pattern:                         # other False values get the default pattern
+            pattern = fr'.*\b{str(self)}\b.*'
+        self._pattern = re.compile(pattern, flags)  # re.compile(COMPILED_PATTERN) is COMPILED_PATTERN
 
     def __eq__(self, other: str) -> bool:
         other = str(other)
         if other == str(self):
             return True
-        if not self.pattern:
+        if not self._pattern:
             return False
-        return bool(self.pattern.fullmatch(other))
+        return bool(self._pattern.fullmatch(other))
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -218,10 +227,10 @@ class Name(str):
         return cls._all.search(item)[1]
 
     def match(self, item) -> re.Match:
-        return self.pattern.fullmatch(str(item))
+        return self._pattern.fullmatch(str(item))
 
     def _match_str(self, item: str) -> re.Match:
-        return self.pattern.fullmatch(item)
+        return self._pattern.fullmatch(item)
 
     def __repr__(self):
         return str(self)

@@ -27,10 +27,10 @@ import logging
 from pathlib import Path
 from typing import Iterable
 from argparse import ArgumentParser
-from contest import ElectionResult, Fields, Name
+from sos.contest import ElectionResult, Fields
 from tabulator import Tabulator, load_tabulators
 from openpyxl import Workbook
-from util import first, LogSelf
+from util import LogSelf
 
 
 class Report(LogSelf):
@@ -40,7 +40,7 @@ class Report(LogSelf):
     - SOS (ElectionResult) precinct votes must match tabulators
     - ??
     """
-    def __init__(self, args):
+    def __init__(self, args, load=True):
         if args.errors:
             args.report_level = logging.ERROR
         elif args.warnings:
@@ -54,6 +54,8 @@ class Report(LogSelf):
         self.election_result: ElectionResult = None
         self.tabulators = {}        # {(county, date, name): Tabulator}
         self.results = {}           # {(county, date):       ElectionResult}
+        if load:
+            self.load(args=args)
 
     def load(self, args):
         results = self.results
@@ -86,6 +88,7 @@ class Report(LogSelf):
         ap.add_argument('--tabulator_dir -t', type=str, description='directory of tabulator receipts', default=None)
         ap.add_argument('--sos_results_xml -x', type=str, description='Election results xml file/directory', default='.')
         ap.add_argument('--fields_yml -f', type=str, description='fields file', default=None)
+        ap.add_argument('--output -o', type=str, description='Output file path', default='./report.xlsx')
 
     @property
     def _rows(self) -> Iterable:
@@ -121,7 +124,8 @@ class Report(LogSelf):
             for loc in tab.locations:
                 if loc not in self.election_result._precincts:
                     self.error(msg=f'Precinct {loc} Not Found in ElectionResult', category='missing')
-        return {}
+
+        return self.errors(report_level=self.report_level)
 
 
 def get_args():
@@ -132,9 +136,12 @@ def get_args():
 
 def main():
     args = get_args()
-
-    # do validation
-    # for each tabulator location, find
+    report = Report(args=args, load=True)
+    report.validate()
+    report_filename = Path(args.output).expanduser()
+    if report_filename.is_absolute() and not report_filename.parent.exists():
+        report_filename.parent.mkdir(mode=0o770, parents=True, exist_ok=True)
+    report.save_xlsx(filename=args.output)
 
 
 if __name__ == '__main__':

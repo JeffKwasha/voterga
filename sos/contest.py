@@ -5,9 +5,10 @@ from pathlib import Path
 from dateutil.parser import parse as parse_date
 from datetime import datetime
 from db import Name, Fields, first
-from sos import property_dict
+from . import property_dict
 from pprint import pformat
 from util import LogSelf, first, dict_sum, dict_diff, longest
+
 """
 ElectionResult:
 - VoterTurnout:
@@ -62,7 +63,8 @@ class Contest(LogSelf):
             for precinct in precincts:
                 name = self.precincts.add(precinct['@name'])
                 votes = int(precinct['@votes'])
-                p = Precinct.add_votes(county=self.county, precinct=name, contest=self, votes=votes, candidate=candidate, vote_type=vote_type)
+                p = Precinct.add_votes(county=self.county, precinct=name, contest=self,
+                                       candidate=candidate, votes=votes, vote_type=vote_type)
                 self.precincts[name] = p
 
         if 'votetype' in kwargs:
@@ -120,20 +122,6 @@ class Contest(LogSelf):
     def __class_getitem__(cls, item):
         return cls._all[item]
 
-
-
-class VoteType:
-    """ does this need to be a thing ... or just a function ?"""
-    # TODO ...?
-    def __init__(self, contest: Contest, choice: Name, name: Name, votes: int, precinct_data: List[dict]):
-        self.name = name
-        self.votes = int(votes)
-
-        for pd in precinct_data:
-            name = Name.add(pd['@name'])
-            votes = int(pd['@votes'])
-            #    def add_votes(self, contest: Name, vote_type: Name, choice: Name, votes: int):
-            Precinct.add_votes(county=None, precinct=name, contest=contest.name, vote_type=self.name, candidate=choice, votes=votes)
 
 
 class Precinct(LogSelf):
@@ -224,6 +212,13 @@ class ElectionResult(LogSelf):
             c = Contest(election_result=self, **property_dict(**contest), choices=contest['Choice'], voteType=contest['VoteType'])
             self._contests[c.name] = c
 
+    @property
+    def key(self):
+        return f"{self.ElectionDate.isoformat().split('T', 1)[0]}:{self.ElectionName}:{self.Region}"
+
+    def precinct_loc(self, loc: Name):
+        return self._precincts_by_loc[loc]
+
     def precinct(self, name: Name):
         return self._precincts[name]
 
@@ -240,8 +235,12 @@ class ElectionResult(LogSelf):
                          **property_dict(**precinct))
             if p.name in self._precincts:
                 _exist = self._precincts[p.name]
-                self._errors.setdefault('duplicate precinct', set()).update({p, _exist})
-                if _exist != p:
+                if _exist == p:
+                    pass
+                elif _exist.key == p.key:
+                    self.error(msg=f'ER:{self.key} duplicate of precinct: {p.key}')
+                else:
+                    self.error(msg=f'ER precinct collision: {p.key} <> ', category='collision')
                     diffs = p.diff(_exist)
                     self.error(f"Precinct [{p.name}] already present: {pformat(diffs)}")
             self._precincts[p.name] = p

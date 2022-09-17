@@ -22,7 +22,9 @@ class TestFields(unittest.TestCase):
         self.assertEqual(2, f[' B '])           # white space stripped
         self.assertEqual(1, f['a xyz'])         # search: anything after a
         self.assertEqual(1, f['a B'])           # search: anything after a
-        self.assertEqual(2, f['B a'])           # search: anything after b
+        self.assertEqual(1, f['B a'])           # search: anything before a (*a* before *b*)
+        self.assertEqual(2, f['B D'])           # search: anything after b (*B* before *D*)
+        self.assertEqual(2, f['b d'])           # search: anything after b case ignored
         self.assertEqual(3, f[('c', 3)], 3)     # key is a tuple match
         self.assertEqual((1, 2, 3, 4), f['d'])  # value can be anything
 
