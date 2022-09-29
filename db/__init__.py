@@ -19,25 +19,25 @@ class Fields(dict):
     """
     _all: 'Fields' = None
 
-    def __init__(self, fields: Any = (), name: str = None, filename: Path or str = None):
+    def __init__(self, fields: Any = (), key: str = None, filename: Path or str = None):
         """ create a 'fields' dict with Names for keys, allowing field['string'] to return as if field['THE_STRING']
             keys can be non strings - especially tuples, but lookups of non-string keys require exact matches
         """
         super().__init__()
-        self.name = name
+        self.name = key
         self.add_all(fields)
         if filename:
             if type(filename) is not Path:
                 filename = Path(filename).expanduser()
             with open(filename, 'r') as f:
                 self.add_all(yaml.safe_load(f))
-        if not name:
+        if not key:
             return
         if Fields._all is None:
             Fields._all = Fields()
-        if name in Fields._all:
+        if key in Fields._all:
             raise NameError(f"Collision with existing Fields")
-        Fields._all[name] = self
+        Fields._all[key] = self
 
     def search(self, key, best_match: bool = True) -> SearchResult:
         best = NOT_FOUND
@@ -71,7 +71,7 @@ class Fields(dict):
         exists = self.search(other)
         if exists:
             return exists[0]
-        rv = Fields(name=None, fields=self)
+        rv = Fields(key=None, fields=self)
         if isinstance(other, Name):
             rv[other] = None
         elif type(other) is tuple and len(other) == 2:
@@ -137,9 +137,9 @@ class Fields(dict):
             return rv
         except KeyError:
             pass
-        rv = self.search(item, best_match=False)[1]
+        rv = self.search(item, best_match=False)
         if rv is not None:
-            return rv
+            return rv[1]
         raise KeyError(repr(item))
 
     def __contains__(self, item):
@@ -153,7 +153,7 @@ class Fields(dict):
         rv = Fields._all.search(item)
         if rv:
             return rv[1]
-        return Fields(name=item)
+        return Fields(key=item)
 
 
 class Name(str):
@@ -202,7 +202,7 @@ class Name(str):
             return
         if not pattern:                         # other False values get the default pattern
             pattern = fr'.*\b{str(self)}\b.*'
-        self._pattern = re.compile(pattern, flags)  # re.compile(COMPILED_PATTERN) is COMPILED_PATTERN
+        self._pattern = pattern if type(pattern) is re.Pattern else re.compile(pattern, flags)
 
     def __eq__(self, other: str) -> bool:
         other = str(other)

@@ -30,7 +30,7 @@ from argparse import ArgumentParser
 from sos.contest import ElectionResult, Fields
 from tabulator import Tabulator, load_tabulators
 from openpyxl import Workbook
-from util import LogSelf
+from util import LogSelf, first, ErrorKey
 
 
 class Report(LogSelf):
@@ -47,11 +47,10 @@ class Report(LogSelf):
             args.report_level = logging.WARN
         elif args.info:
             args.report_level = logging.INFO
-        self.report_level = args.report_level
+        self.report_level = args.report_level if type(args.report_level) is int else logging.INFO
         self.dir_results = Path(args.sos_results_xml).expanduser().absolute()
         self.dir_tabulator = Path(args.tabulator_dir).expanduser().absolute() if args.tabulator_dir else self.dir_results
         self.dir_top = min(self.dir_results, self.dir_tabulator, key=lambda p: len(str(p)))
-        self.election_result: ElectionResult = None
         self.tabulators = {}        # {(county, date, name): Tabulator}
         self.results = {}           # {(county, date):       ElectionResult}
         if load:
@@ -59,11 +58,11 @@ class Report(LogSelf):
 
     def load(self, args):
         results = self.results
-        field_files = args.results_xml.glob('*.yml') if not args.fields_yml else [Path(args.fields_yml).expanduser()]
+        field_files = self.dir_results.glob('*.yml') if not args.fields_yml else [Path(args.fields_yml).expanduser()]
         for file in field_files:
-            Fields(name=file.stem, filename=file)
+            Fields(key=file.stem, filename=file)
 
-        xml_paths: list = args.results_xml.glob('*.xml') if args.results_xml.is_dir() else [args.results_xml]
+        xml_paths: list = self.dir_results.glob('*.xml') if self.dir_results.is_dir() else [self.dir_results]
         for xml_file in xml_paths:
             er = ElectionResult.load_from_xml(filename=xml_file)
             results[(er.Region, er.ElectionDate)] = er
@@ -71,61 +70,73 @@ class Report(LogSelf):
 
         self._tabulators_by_file = load_tabulators(self.dir_tabulator)
         for li in self._tabulators_by_file.values():
-            self.tabulators.update(li)
+            self.tabulators.update({v._key: v for v in li})
+        return None
 
     @property
     def name(self):
-        er: ElectionResult = self.election_result
-        return f"{er.ElectionDate.date().isoformat()}:{er.ElectionName}:{er.Region}"
+        er: ElectionResult = first(self.results.values())
+        return f"{er.ElectionDate.date().isoformat()}.{er.ElectionName}.{er.Region}"
 
     @classmethod
     def get_args(cls, ap: ArgumentParser):
-        ap.add_argument('--errors -e', description='report errors, but not warnings')
-        ap.add_argument('--warnings -w', description='report warnings, but not info/debug')
-        ap.add_argument('--info -i', description='report info, but not debug')
-        ap.add_argument('--debug -d', description='report everything')
-        ap.add_argument('--report_level -r', type=int, description='set report level specifically')
-        ap.add_argument('--tabulator_dir -t', type=str, description='directory of tabulator receipts', default=None)
-        ap.add_argument('--sos_results_xml -x', type=str, description='Election results xml file/directory', default='.')
-        ap.add_argument('--fields_yml -f', type=str, description='fields file', default=None)
-        ap.add_argument('--output -o', type=str, description='Output file path', default='./report.xlsx')
+        ap.add_argument('--errors', '-e', help='report errors, but not warnings')
+        ap.add_argument('--warnings', '-w', help='report warnings, but not info/debug')
+        ap.add_argument('--info', '-i', help='report info, but not debug')
+        ap.add_argument('--debug', '-d', help='report everything')
+        ap.add_argument('--report_level', '-r', type=int, help='set report level specifically')
+        ap.add_argument('--tabulator_dir', '-t', type=str, help='directory of tabulator receipts', default=None)
+        ap.add_argument('--sos_results_xml', '-x', type=str, help='Election results xml file/directory', default='.')
+        ap.add_argument('--fields_yml', '-f', type=str, help='fields file', default=None)
+        ap.add_argument('--output', '-o', type=str, help='Output file path', default='./report.xlsx')
 
-    @property
-    def _rows(self) -> Iterable:
-        return filter(lambda r: r.level > self.report_level, self.validate())
-
-    def save_xlsx(self, filename: str = 'tabulator_report.xlsx'):
+    def save_xlsx(self, filename: Path, report_level=None, **kwargs):
+        report_level = report_level if type(report_level) is int else self.report_level
         from openpyxl.worksheet.worksheet import Worksheet
         # save into an excel file with formatting / colors / etc
         wb = Workbook(iso_dates=True)
-        ws: Worksheet = wb.create_sheet(f"{self.name}", index=1)
-        ws.append(self._rows)
+        wb.remove_sheet(wb.active)
+
+        def add_tab(_name, obj: LogSelf, level=report_level):
+            ws: Worksheet = wb.create_sheet(f"{_name}", index=1)
+            errors = obj.errors(report_level)
+            ws.append(ErrorKey._fields + ('description(s)',))
+            for errkey, desc in errors.items():
+                ws.append((*errkey, *list(desc)))
+
+        if self not in kwargs.values():
+            kwargs[self.name] = self
+
+        for name, v in kwargs.items():
+            add_tab(name, v)
+
+        filename = filename if filename.is_absolute() else self.dir_top.joinpath(filename)
+        if not filename.parent.exists():
+            filename.parent.mkdir(mode=0o770, parents=True, exist_ok=True)
         wb.save(filename=filename)
 
     def __str__(self):
         # return giant formatted string?... nah
         return f"{self.name}, {len(self.tabulators)}"
 
-    def validate(self) -> Iterable:
+    def validate(self, report_level=None) -> Iterable:
         """ Validate all records, and return results as rows
             row = dict: name, report_level, description, records
         """
+        report_level = self.report_level if report_level is None else report_level
         tabulator_results = {}  # by location, where a location refer to a set of tabulator_results
-        precincts = Tabulator.by_location(self.tabulators)
-        set(precincts.keys()).difference(self.election_result._precincts)
-        #for tabulator in self.tabulators.values():
-        #    precinct = tabulator.location
-            # Each tabulator has a location - a precinct
+        tabulators = Tabulator.by_location(self.tabulators.values())
+        er_precincts = first(self.results.values())._precincts
 
-        #_all_precincts = self.election_result._precincts
-        ## TODO - check location differences between sources
-        tab: Tabulator = None
-        for tab in self.tabulators:
-            for loc in tab.locations:
-                if loc not in self.election_result._precincts:
-                    self.error(msg=f'Precinct {loc} Not Found in ElectionResult', category='missing')
+        def get_diff(a, b):
+            return set(filter(lambda v: type(v) is not tuple, set(a).difference(b)))
 
-        return self.errors(report_level=self.report_level)
+        missing_locations = get_diff(er_precincts, tabulators)
+        for loc in missing_locations:
+            self.warning(msg=f'location: {loc} not found in tabulator receipts',
+                         category='missing tabulator(s)', who=f'precinct:{loc}')
+
+        return self.errors(report_level=report_level)
 
 
 def get_args():
@@ -137,11 +148,9 @@ def get_args():
 def main():
     args = get_args()
     report = Report(args=args, load=True)
-    report.validate()
+    result = report.validate()
     report_filename = Path(args.output).expanduser()
-    if report_filename.is_absolute() and not report_filename.parent.exists():
-        report_filename.parent.mkdir(mode=0o770, parents=True, exist_ok=True)
-    report.save_xlsx(filename=args.output)
+    report.save_xlsx(filename=report_filename)
 
 
 if __name__ == '__main__':

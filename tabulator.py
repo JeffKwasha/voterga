@@ -119,13 +119,16 @@ def load_tabulators(path: Path, **kwargs) -> dict:
     """ :returns {filename: [Tabulator1, Tabulator2, ...], ... }"""
     global log
     xlsx_files = path.glob('*.xlsx')
-    kwargs.update(parse_path(path))
+    if not xlsx_files:
+        raise ValueError(f"No xlsx files found in [{path}]")
+    kwargs.update(parse_path(path) or {})
     di = {}
     for file in xlsx_files:
         if not file.exists():
             log.error("glob fail?", category='bad file')
             continue
-        di[file.name] = Xlsx(filename=file).load_columns(Tabulator, **kwargs)
+        xlsx = Xlsx(filename=file)
+        di[file.name] = xlsx.load_columns(Tabulator, **kwargs)
     return di
 
 

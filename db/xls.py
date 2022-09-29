@@ -1,6 +1,7 @@
 # handle importing precinct data from the sos website
 import logging
 from pathlib import Path
+from util import LogSelf
 from db import Name
 
 # https://xlrd.readthedocs.io/en/latest/ (old xls)
@@ -10,17 +11,14 @@ from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.utils.exceptions import InvalidFileException
 
 
-class Xlsx:
+class Xlsx(LogSelf):
     """ Handle loading xls and generate objects
     """
     def __init__(self, filename: Path, read_only: bool = False):
-        try:
-            self.wb: Workbook = load_workbook(filename=filename, read_only=read_only)
-            self._filename = filename
-            self._max_column = None
-            self._row_names = []
-        except InvalidFileException as e:
-            logging.error(f"Unable to open {filename}: {e}")
+        self._filename = filename
+        self._max_column = None
+        self._row_names = []
+        self.wb: Workbook = load_workbook(filename=filename, read_only=read_only)
 
     @property
     def max_column(self) -> int:

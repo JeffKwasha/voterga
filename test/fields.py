@@ -14,7 +14,7 @@ class TestFields(unittest.TestCase):
                 Name('timmy', pattern=r'.*\btimmy\b.*'): 'TIMMY!',
                 Name('jimmy', pattern=r'jimmy\b.*'): 'JIMMY!',
                 }
-        f = Fields(name=None, fields=data)
+        f = Fields(key=None, fields=data)
 
         self.assertEqual(len(f), len(data))     # nothing skipped, nothing collides
         self.assertEqual(1, f['a'])             # Simple dict
@@ -47,7 +47,7 @@ class TestFields(unittest.TestCase):
                 Name('cheat collision', pattern=r'.*\bcollision\b.*'): 'collide!',
                 Name('cheat2', pattern=r'.*\bcheat2\b.*'): 'CHEAT2!',
                 }
-        f = Fields(name=None, fields=data)
+        f = Fields(key=None, fields=data)
 
         self.assertLess(len(f), len(data))      # collisions reduced f
         self.assertEqual(1, f['a'])             # collision overwrote 0

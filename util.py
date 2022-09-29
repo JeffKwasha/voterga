@@ -1,24 +1,34 @@
-from typing import Iterable
+from typing import Iterable, NamedTuple
 from datetime import datetime
 from pytz import utc
 from pathlib import Path
 import re
 import logging
+from logging import INFO
 
 # data path should contain a year (1900 <= even years <= 2098)  and county ex: /foo/bar/2020/fulton/data
-_data_path_re = re.compile(str(Path('/').joinpath('.*', r'(?P<year>(19|20)\d[02468])', r'(?P<county>\w+)', '.*')), re.I)
+_data_path_re = re.compile(str(Path('').joinpath('.*', r'(?P<year>(19|20)\d[02468])', r'(?P<county>\w+)', '.*')), re.I)
+
+
+def now() -> datetime:
+    return datetime.now(utc).replace(microsecond=0)
+
+
+class ErrorKey(NamedTuple):
+    level: int = INFO         # report_level
+    what: str = None        # category of problem
+    when: datetime = None   # time of the error occurred
+    who: str = None         # source / file
+    why: str = None         # cause if known
 
 
 def parse_path(p: Path):
     """ :returns {'year': str, 'county': str} """
     global _data_path_re
-    m = _data_path_re.match(str(p.absolute()))
+    path = str(p.absolute())
+    m = _data_path_re.match(f"{path}/")     # regex requires a minimum one slash
     if m:
         return m.groupdict()
-
-
-def now():
-    return datetime.now(utc).replace(microsecond=0)
 
 
 def first(di: Iterable, default=None):
@@ -81,6 +91,10 @@ class LogSelf:
         cls._errors = {}    # set(errors) by (level, category)
         LogSelf._classes.add(cls)
 
+    @property
+    def log_name(self):
+        return self.__class__.__name__
+
     @classmethod
     def all_errors(cls, report_level: int):
         rv = {}
@@ -93,13 +107,14 @@ class LogSelf:
     @classmethod
     def errors(cls, report_level: int) -> dict:
         rv = {}
-        levels = sorted([level for level in cls._errors if level >= report_level], reverse=True)
-        for level in levels:
-            rv[level].extend(cls._errors[level])
+        for k in filter(lambda t: t.level >= report_level, cls._errors):
+            rv.setdefault(k, set()).update(cls._errors.get(k))
         return rv
 
-    def log(self, msg, level: int = logging.INFO, *args, category: str = None, **kwargs):
-        key = (level, category)     # (self.__class__.__name__, level)
+    def log(self, msg,  category: str = None, level: int = logging.INFO, *args,
+            when: datetime = None, who: str = None, why: str = None, **kwargs):
+        who = self.__class__.__name__ if who is None else who
+        key = ErrorKey(level=level, what=category, when=when, who=who, why=why)
         errors = self._errors.setdefault(key, set())
         errors.add(msg)
 
@@ -119,9 +134,11 @@ class LogSelf:
 
         fn(msg=msg, *args, **kwargs)
 
-    def error(self, msg: str, *args, category: str = None, **kwargs):
-        self.log(msg, level=logging.ERROR, *args, category=category, **kwargs)
+    def error(self, msg: str, *args, category: str = None,
+              when: datetime = None, who: str = None, why: str = None, **kwargs):
+        self.log(msg, level=logging.ERROR, *args, category=category, when=when, who=who, why=why, **kwargs)
 
-    def warning(self, msg: str, *args, category: str = None, **kwargs):
-        self.log(msg, level=logging.WARN, *args, category=category, **kwargs)
+    def warning(self, msg: str, *args, category: str = None,
+                when: datetime = None, who: str = None, why: str = None, **kwargs):
+        self.log(msg, level=logging.WARN, *args, category=category, when=when, who=who, why=why, **kwargs)
 

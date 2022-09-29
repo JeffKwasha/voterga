@@ -31,14 +31,14 @@ ElectionResult:
 class Contest(LogSelf):
     """ a contest within a county.  Note: statewide results include counties but not county results
     """
-    _all = Fields(name='Contest')     # all Contests
-    _vote_types = Fields(name='vote_types', fields={
-        'day_of': r'(election.)?day.*',
-        'advanced': r'advanced.voting.*',
-        'absentee': r'absentee.*',
-        'provisional': r'provisional.*',
-        'under': r'under.*',
-        'over': r'over.*'})
+    _all = Fields(key='Contest')     # all Contests
+    _vote_types = Fields(key='vote_types', fields={
+        Name('day_of', r'(election.)?day.*'),
+        Name('advanced', r'advanced.voting.*'),
+        Name('absentee', r'absentee.*'),
+        Name('provisional', r'provisional.*'),
+        Name('under', r'under.*'),
+        Name('over', r'over.*')})
 
     def __init__(self, election_result, text: Name, key, precinctsReported,
                  voteFor=1, isQuestion=False, **kwargs):
@@ -123,15 +123,15 @@ class Contest(LogSelf):
         return cls._all[item]
 
 
-
 class Precinct(LogSelf):
-    _all = Fields(name="Precinct")
-    _county = Fields(name="Precinct")
+    _all = Fields["Precinct"]
+    #_county = Fields["Precinct"]    # TODO - why is _county the same Fields?
 
     def __init__(self, name: Name or tuple[Name], county: str, election_date: datetime, timestamp: datetime or set,
                  totalVoters, ballotsCast, voterTurnout, percentReporting,
                  number: int = 1,
                  **_):
+        self.name = name
         self.election_date = election_date
         self.timestamp = timestamp
         self.county = county        # county comes straight from ElectionResult.Region, only other place is website...
