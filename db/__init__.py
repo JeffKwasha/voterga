@@ -19,25 +19,31 @@ class Fields(dict):
     """
     _all: 'Fields' = None
 
+    def __new__(cls, fields: Any = (), key: str = None, **kwargs):
+        if cls._all and key is not None:
+            rv = cls._all.search(key)
+            if rv:
+                return rv.value
+        return super().__new__(cls, fields, key, **kwargs)
+
     def __init__(self, fields: Any = (), key: str = None, filename: Path or str = None):
         """ create a 'fields' dict with Names for keys, allowing field['string'] to return as if field['THE_STRING']
             keys can be non strings - especially tuples, but lookups of non-string keys require exact matches
         """
-        super().__init__()
         self.name = key
+
+        if key and Fields._all is None:
+            Fields._all = Fields()
+
+        super().__init__()
         self.add_all(fields)
         if filename:
             if type(filename) is not Path:
                 filename = Path(filename).expanduser()
             with open(filename, 'r') as f:
                 self.add_all(yaml.safe_load(f))
-        if not key:
-            return
-        if Fields._all is None:
-            Fields._all = Fields()
-        if key in Fields._all:
-            raise NameError(f"Collision with existing Fields")
-        Fields._all[key] = self
+        if key is not None:
+            Fields._all[key] = self
 
     def search(self, key, best_match: bool = True) -> SearchResult:
         best = NOT_FOUND
@@ -138,7 +144,7 @@ class Fields(dict):
         except KeyError:
             pass
         rv = self.search(item, best_match=False)
-        if rv is not None:
+        if rv:
             return rv[1]
         raise KeyError(repr(item))
 
@@ -150,10 +156,7 @@ class Fields(dict):
     def __class_getitem__(cls, item: str) -> 'Fields':
         if not item:
             raise ValueError(f"{item} isn't valid")
-        rv = Fields._all.search(item)
-        if rv:
-            return rv[1]
-        return Fields(key=item)
+        return Fields._all[item]
 
 
 class Name(str):

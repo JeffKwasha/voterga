@@ -124,8 +124,8 @@ class Contest(LogSelf):
 
 
 class Precinct(LogSelf):
-    _all = Fields["Precinct"]
-    #_county = Fields["Precinct"]    # TODO - why is _county the same Fields?
+    _all = Fields(key="Precinct")
+    _county = Fields(key="Precinct")    # TODO - why is _county the same Fields?
 
     def __init__(self, name: Name or tuple[Name], county: str, election_date: datetime, timestamp: datetime or set,
                  totalVoters, ballotsCast, voterTurnout, percentReporting,
@@ -217,6 +217,8 @@ class ElectionResult(LogSelf):
         return f"{self.ElectionDate.isoformat().split('T', 1)[0]}:{self.ElectionName}:{self.Region}"
 
     def precinct_loc(self, loc: Name):
+        if self._precincts_by_loc is None:
+            self._precincts_by_loc = self._precincts
         return self._precincts_by_loc[loc]
 
     def precinct(self, name: Name):

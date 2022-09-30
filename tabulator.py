@@ -43,15 +43,15 @@ class Tabulator(LogSelf):
     def by_location(cls, li: Iterable['Tabulator']) -> dict:
         """ :returns { location(str): Tabulator,... for each li}"""
 
-        def _add_location(loc, tab):
-            rv.setdefault(loc, set()).add(tab)
+        def _add_location(di, location, tabulator):
+            di.setdefault(location, set()).add(tabulator)
 
         rv = {}
         for tab in li:
             if len(tab.locations) > 1:
-                _add_location(tab.locations, tab)
+                _add_location(rv, tab.locations, tab)
             for loc in tab.locations:
-                _add_location(loc, tab)
+                _add_location(rv, loc, tab)
         return rv
 
     def parse_races(self, kwargs: dict) -> dict:

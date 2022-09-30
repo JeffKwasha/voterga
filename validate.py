@@ -25,7 +25,7 @@ Race:
 """
 import logging
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Set
 from argparse import ArgumentParser
 from sos.contest import ElectionResult, Fields
 from tabulator import Tabulator, load_tabulators
@@ -119,6 +119,22 @@ class Report(LogSelf):
         # return giant formatted string?... nah
         return f"{self.name}, {len(self.tabulators)}"
 
+    def validate_locations(self, er_precincts, tabulators):
+        def get_diff(a, b):
+            return set(filter(lambda v: type(v) is not tuple, set(a).difference(b)))
+        missing_locations = get_diff(er_precincts, tabulators)
+        for loc in missing_locations:
+            self.info(msg=f'location: {loc} not found in tabulator receipts',
+                      category='missing tabulator(s)', who=f'precinct:{loc}')
+        return missing_locations
+
+    def validate_races(self, er_precincts, tabs_by_loc):
+        tabs: Set[Tabulator]
+        for loc, tabs in tabs_by_loc.items():
+            sum = None
+            for tab in tabs:
+                tab.races + tab.races
+
     def validate(self, report_level=None) -> Iterable:
         """ Validate all records, and return results as rows
             row = dict: name, report_level, description, records
@@ -128,13 +144,8 @@ class Report(LogSelf):
         tabulators = Tabulator.by_location(self.tabulators.values())
         er_precincts = first(self.results.values())._precincts
 
-        def get_diff(a, b):
-            return set(filter(lambda v: type(v) is not tuple, set(a).difference(b)))
-
-        missing_locations = get_diff(er_precincts, tabulators)
-        for loc in missing_locations:
-            self.warning(msg=f'location: {loc} not found in tabulator receipts',
-                         category='missing tabulator(s)', who=f'precinct:{loc}')
+        self.validate_locations(er_precincts, tabulators)
+        self.validate_races(er_precincts, tabulators)
 
         return self.errors(report_level=report_level)
 
@@ -151,6 +162,8 @@ def main():
     result = report.validate()
     report_filename = Path(args.output).expanduser()
     report.save_xlsx(filename=report_filename)
+    from pprint import pformat
+    logging.info(f"Results:\n{pformat(result)}\n====== End of Results ======")
 
 
 if __name__ == '__main__':

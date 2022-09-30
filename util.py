@@ -16,10 +16,10 @@ def now() -> datetime:
 
 class ErrorKey(NamedTuple):
     level: int = INFO         # report_level
-    what: str = None        # category of problem
+    why: str = None         # reason (missing, mismatch, junk)
+    what: str = None        # object (race, precinct, tabulator...)
     when: datetime = None   # time of the error occurred
-    who: str = None         # source / file
-    why: str = None         # cause if known
+    who: str = None         # source / file / data path ...
 
 
 def parse_path(p: Path):
@@ -111,10 +111,10 @@ class LogSelf:
             rv.setdefault(k, set()).update(cls._errors.get(k))
         return rv
 
-    def log(self, msg,  category: str = None, level: int = logging.INFO, *args,
-            when: datetime = None, who: str = None, why: str = None, **kwargs):
+    def log(self, msg, *args, what: str = None, why: str = None, level: int = logging.INFO,
+            when: datetime = None, who: str = None, **kwargs):
         who = self.__class__.__name__ if who is None else who
-        key = ErrorKey(level=level, what=category, when=when, who=who, why=why)
+        key = ErrorKey(level=level, what=what, why=why, when=when, who=who)
         errors = self._errors.setdefault(key, set())
         errors.add(msg)
 
@@ -134,11 +134,11 @@ class LogSelf:
 
         fn(msg=msg, *args, **kwargs)
 
-    def error(self, msg: str, *args, category: str = None,
-              when: datetime = None, who: str = None, why: str = None, **kwargs):
-        self.log(msg, level=logging.ERROR, *args, category=category, when=when, who=who, why=why, **kwargs)
+    def error(self, msg, *args, what: str = None, why: str = None,
+              when: datetime = None, who: str = None, **kwargs):
+        self.log(msg, level=logging.ERROR, *args, what=what, when=when, who=who, why=why, **kwargs)
 
-    def warning(self, msg: str, *args, category: str = None,
-                when: datetime = None, who: str = None, why: str = None, **kwargs):
-        self.log(msg, level=logging.WARN, *args, category=category, when=when, who=who, why=why, **kwargs)
+    def warning(self, msg, *args, what: str = None, why: str = None,
+                when: datetime = None, who: str = None, **kwargs):
+        self.log(msg, level=logging.WARN, *args, what=what, when=when, who=who, why=why, **kwargs)
 
