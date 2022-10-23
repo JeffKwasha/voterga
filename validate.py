@@ -27,10 +27,10 @@ import logging
 from pathlib import Path
 from typing import Iterable, Set
 from argparse import ArgumentParser
-from sos.contest import ElectionResult, Fields
+from ga.contest import ElectionResult, Fields
 from tabulator import Tabulator, load_tabulators
 from openpyxl import Workbook
-from util import LogSelf, first, ErrorKey
+from util import LogSelf, first, ErrorKey, dict_sum, dict_diff
 
 
 class Report(LogSelf):
@@ -129,11 +129,27 @@ class Report(LogSelf):
         return missing_locations
 
     def validate_races(self, er_precincts, tabs_by_loc):
-        tabs: Set[Tabulator]
-        for loc, tabs in tabs_by_loc.items():
-            sum = None
-            for tab in tabs:
-                tab.races + tab.races
+        # for loc in er_precincts tab = tabs_by_loc[loc]
+        # loc = tab.locations
+        # if len(loc) > 1:
+        #    tab = tabs_by_loc[loc]
+        # results[loc] = sum = {}
+        # [dict_sum(sum, t.races) for t in tab]
+        tabs: Set[Tabulator] = set()
+        for set_of_tabs in tabs_by_loc.values():
+            tabs.update(set_of_tabs)
+
+        tab_totals_by_loc = {}
+        for tab in tabs:
+            loc = tab.locations
+            tab_totals_by_loc[loc] = loc_total = {}
+            for tab_at_loc in tabs_by_loc[loc]:
+                dict_sum(loc_total, tab_at_loc.races)
+
+        for locs in tab_totals_by_loc.keys():
+            # sum er_precincts[loc]
+            # compare, and report
+            pass
 
     def validate(self, report_level=None) -> Iterable:
         """ Validate all records, and return results as rows

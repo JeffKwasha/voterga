@@ -65,6 +65,8 @@ class Tabulator(LogSelf):
             ... }
         The number is the row from the xlsx just to ensure uniqueness
         """
+        contests = Fields('contests')
+        candidates = Fields(f'{self.county}.candidates')
         accept = re.compile(r'\d+:.+')
         races, race_name = {}, ''
         for colA, val in kwargs.items():
@@ -73,11 +75,12 @@ class Tabulator(LogSelf):
             row, name = (f.strip() for f in colA.split(':', 1))
             row = int(row)
 
-            # Names of races don't have vote counts
+            # Names of races don't have vote counts, create and initialize the race
             if val is None or val == '':
-                race_name = Fields['contests'].add(key=name)
+                race_name = contests.add(key=name)
                 races[race_name] = {}
                 continue
+
             # everything else is a candidate: vote_count (but catch formulas)
             try:
                 races[race_name][Name.add(name)] = int(val)

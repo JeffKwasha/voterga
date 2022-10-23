@@ -1,10 +1,9 @@
 # define a race - a single seat in an election
-import re
 from typing import List
 from pathlib import Path
 from dateutil.parser import parse as parse_date
 from datetime import datetime
-from db import Name, Fields, first
+from db import Name, Fields
 from . import property_dict
 from pprint import pformat
 from util import LogSelf, first, dict_sum, dict_diff, longest

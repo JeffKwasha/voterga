@@ -31,7 +31,6 @@ class Fields(dict):
             keys can be non strings - especially tuples, but lookups of non-string keys require exact matches
         """
         self.name = key
-
         if key and Fields._all is None:
             Fields._all = Fields()
 
@@ -98,6 +97,7 @@ class Fields(dict):
             for k, v in fields.items():
                 self.add(key=k, value=v)
             return len(fields)
+
         for f in fields:
             if isinstance(f, dict):
                 self.add(**f)
@@ -114,15 +114,15 @@ class Fields(dict):
             pass
         return default
 
-    def add(self, key: Any, value=None, pattern: re.Pattern or str = '', best_match: bool = True) -> 'Name':
+    def add(self, key: Any, pattern: re.Pattern or str = '', value=None, best_match: bool = True) -> 'Name':
         rv = self.search(key, best_match=best_match)
         if not rv:
             rv = (key, rv[1]) if isinstance(key, Name) or type(key) is tuple else (Name(key, pattern), None)
         super().__setitem__(rv[0], value if value is not None else rv[1])
         return rv[0]
 
-    def append(self, key, value=None, pattern: re.Pattern or str = '', best_match: bool = True):
-        return self.add(key, value, pattern, best_match=best_match)
+    def append(self, key, pattern: re.Pattern or str = '', value=None, best_match: bool = True):
+        return self.add(key, pattern=pattern, value=value, best_match=best_match)
 
     def build(self, name: str, obj: callable, *args, **kwargs):
         """ If name is not already present, call obj with args, kwargs and store/return the result """

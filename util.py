@@ -58,8 +58,12 @@ def pop_pattern(haystack, pattern: str, ignore_case=True, default=None):
     return default
 
 
-def dict_sum(a: dict, b: dict) -> dict:
-    _sum = a.copy()
+def dict_sum(a: dict, b: dict, modify: bool or dict = True) -> dict:
+    _sum = a
+    if not modify:
+        _sum = a.copy()
+    elif isinstance(modify, dict):
+        _sum = modify
     for k, v in b.items():
         if k in _sum:
             _sum[k] = _sum[k] + v

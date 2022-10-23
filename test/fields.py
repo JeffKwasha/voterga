@@ -1,10 +1,8 @@
-
 from db import Name, Fields
 import unittest
 
 
 class TestFields(unittest.TestCase):
-
     def test_basic(self):
         data = {'a': 1,
                 'B': 2,
@@ -63,6 +61,7 @@ class TestFields(unittest.TestCase):
 
 class TestName(unittest.TestCase):
     pass
+
 
 if __name__ == '__main__':
     unittest.main()
