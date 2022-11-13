@@ -7,6 +7,7 @@ from db import Name, Fields
 from . import property_dict
 from pprint import pformat
 from util import LogSelf, first, dict_sum, dict_diff, longest
+from race import Race
 
 """
 ElectionResult:
@@ -30,7 +31,7 @@ ElectionResult:
 class Contest(LogSelf):
     """ a contest within a county.  Note: statewide results include counties but not county results
     """
-    _all = Fields(key='Contest')     # all Contests
+    _all = Fields(key='Contest')     # all Contests by name
     _vote_types = Fields(key='vote_types', fields={
         Name('day_of', r'(election.)?day.*'),
         Name('advanced', r'advanced.voting.*'),
@@ -39,7 +40,8 @@ class Contest(LogSelf):
         Name('under', r'under.*'),
         Name('over', r'over.*')})
 
-    def __init__(self, election_result, text: Name, key, precinctsReported,
+    def __init__(self, election_result: 'ElectionResult',
+                 text: Name, key, precinctsReported,
                  voteFor=1, isQuestion=False, **kwargs):
         name = text
         self._election_result = election_result
@@ -59,12 +61,16 @@ class Contest(LogSelf):
                 precincts = [precincts]
             vote_type = self._vote_types[vote_type]
             self.vote_totals[(candidate, vote_type)] = int(votes)
+            # TODO - ER precincts should use race.Race? or just get rid of ER Precincts?
             for precinct in precincts:
                 name = self.precincts.add(precinct['@name'])
                 votes = int(precinct['@votes'])
                 p = Precinct.add_votes(county=self.county, precinct=name, contest=self,
                                        candidate=candidate, votes=votes, vote_type=vote_type)
-                self.precincts[name] = p
+                p2 = Race.add_votes(seat=self.name, candidate=candidate, count=votes,
+                               source=self._election_result.source, precinct=name,vote_type=vote_type)
+                self.precincts[name] = p2
+                #self.precincts[name] = p
 
         if 'votetype' in kwargs:
             for vt in kwargs['votetype']:
@@ -194,11 +200,12 @@ class Precinct(LogSelf):
 
 
 class ElectionResult(LogSelf):
-    def __init__(self, xml_dict):
+    def __init__(self, xml_dict, source=None):
         self.Timestamp = parse_date(xml_dict['Timestamp'])
         self.ElectionName = Name(xml_dict['ElectionName'])
         self.ElectionDate = parse_date(xml_dict['ElectionDate'])
         self.Region = xml_dict['Region']
+        self._source = source
         self._errors = {}
 
         # do VoterTurnout to init Precincts

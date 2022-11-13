@@ -4,6 +4,7 @@ from db import Name, Fields
 from pathlib import Path
 from db.xls import Xlsx
 from util import parse_path, pop_pattern, LogSelf
+from race import Race
 import logging
 _SPLIT_RE = re.compile(r'[- ]+')
 Name.add('write-in', re.compile(r'write[- ]*in\b]', flags=re.IGNORECASE))
@@ -34,7 +35,7 @@ class Tabulator(LogSelf):
         self._errors = {}
 
         # Now that all kwargs other than races have been removed, parse the races
-        self.races = self.parse_races(kwargs)
+        #self.races = self.parse_races(kwargs)
 
         cls = self.__class__
         cls._all[self._key] = self
@@ -54,7 +55,7 @@ class Tabulator(LogSelf):
                 _add_location(rv, loc, tab)
         return rv
 
-    def parse_races(self, kwargs: dict) -> dict:
+    def parse_races(self, kwargs: dict):
         """ kwargs is ordered dict of races, candidates and votes from a tally tape:
         {   '4:President of the US': None,
             '5:Hodge': 123,
@@ -66,7 +67,7 @@ class Tabulator(LogSelf):
         The number is the row from the xlsx just to ensure uniqueness
         """
         contests = Fields('contests')
-        candidates = Fields(f'{self.county}.candidates')
+        # candidates = Fields(f'{self.county}.candidates')
         accept = re.compile(r'\d+:.+')
         races, race_name = {}, ''
         for colA, val in kwargs.items():
@@ -78,16 +79,21 @@ class Tabulator(LogSelf):
             # Names of races don't have vote counts, create and initialize the race
             if val is None or val == '':
                 race_name = contests.add(key=name)
-                races[race_name] = {}
                 continue
 
             # everything else is a candidate: vote_count (but catch formulas)
             try:
-                races[race_name][Name.add(name)] = int(val)
+                Race.add_votes(seat=race_name, candidate=name, count=int(val), precinct=self.locations,
+                               source=self._file, vote_type='day')
             except ValueError:
                 self.error(f"Found invalid vote count in {self._file} row: {row} race:{race_name} candidate:{name} = '{val}'", category='bad field')
                 continue
-        return races
+        return None
+
+    @property
+    def races(self):
+        logging.WARNING(f"-----------TODO------------")
+        return {}
 
     @property
     def _key(self):
@@ -103,14 +109,16 @@ class Tabulator(LogSelf):
     def __repr__(self):
         return f"{self.name} <{self.id}> {self.races}"
 
-    def _validate_race(self, race_name: str = None, level: int = logging.WARNING) -> dict:
-        race = self.races[race_name].copy()
+    def _validate_race(self, seat: str = None, level: int = logging.WARNING) -> dict:
+        # TODO - wrong now
+        race = self.races[seat].copy()
         total = race.pop(Name['total votes'])
         if sum(race.values()) != total:
-            self.error(f"Total Mismatch: Race[{race_name}] Total[{total}] != Cast[{sum(race.values())}", category='bad total')
+            self.error(f"Total Mismatch: Race[{seat}] Total[{total}] != Cast[{sum(race.values())}", category='bad total')
         return self._errors
 
     def _validate_races(self, level: int = logging.WARNING):
+        # TODO
         return {k: self._validate_race(k, level) for k in self.races}
 
     def validate(self, level: int):

@@ -1,4 +1,4 @@
-from typing import Iterable, NamedTuple
+from typing import Iterable, NamedTuple, Callable
 from datetime import datetime
 from pytz import utc
 from pathlib import Path
@@ -80,6 +80,32 @@ def dict_diff(a: dict, b: dict) -> dict:
         else:
             diff[k] = v
     return diff
+
+
+def deep_set(di: dict, keys: tuple, value, dict_type: Callable = dict):
+    for n, k in enumerate(keys):
+        if n == len(keys) - 1:
+            di[k] = value
+            return value
+        if k not in di or not isinstance(di[k], dict):
+            di[k] = dict_type()
+        di = di[k]
+    return None
+
+
+def deep_tally(di: dict, keys: tuple):
+    if not isinstance(di, dict):
+        return di
+    for n, k in enumerate(keys):
+        if k is None:
+            return sum([deep_tally(di[_key], keys[n + 1:]) for _key in di])
+        if k not in di:
+            return 0
+        if n == len(keys) - 1:
+            di = di[k]
+            return di if not isinstance(di, dict) else deep_tally(di, (None,))
+        di = di[k]
+    return 0
 
 
 class LogSelf:

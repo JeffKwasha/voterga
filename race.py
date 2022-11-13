@@ -7,8 +7,9 @@ Goals:
  - method to return tallied results
 """
 
-from typing import NamedTuple
+from typing import NamedTuple, Hashable, Iterable
 from db import Fields, Name, SearchResult
+from util import deep_set
 #__all__ = ['races', 'Race']
 
 races = Fields(key='Races')
@@ -43,7 +44,7 @@ class Race(NamedTuple):
         return f"{self.seat}: {self.candidates}"
 
     @classmethod
-    def __class_getitem__(cls, item):
+    def __class_getitem__(cls, item) -> 'Race':
         return races[item]
 
     @classmethod
@@ -56,3 +57,41 @@ class Race(NamedTuple):
                 continue
             rv[found] = r.seat
         return rv.search(candidate, best_match=True)
+
+    @classmethod
+    def add_votes(cls, seat: str, candidate: str, count: int, source: str, precinct: Hashable,
+                  vote_type: str = 'election day'):
+        race = cls[seat]
+        race.set_votes(candidate=candidate, count=count, source=source, precinct=precinct, vote_type=vote_type)
+        return race.candidates[candidate][source][precinct]
+
+    def set_votes(self, candidate: str, count: int, source: str, precinct: tuple or str,
+                  vote_type: str = 'election day'):
+        deep_set(self.candidates, (candidate, source, precinct, vote_type), count)
+        if isinstance(precinct, tuple):
+            precinct_dict = self.candidates[candidate][source][precinct]
+            for p in precinct:
+                self.candidates[candidate][source][p] = precinct_dict
+
+    def tally(self, source: str, candidate: str = None, precinct: tuple or str = None, vote_type: str = None):
+        def deep_tally(di: dict, keys: tuple):
+            if not isinstance(di, dict):
+                return di
+            for n, k in enumerate(keys):
+                if k is None:
+                    return sum([deep_tally(di[_key], keys[n+1:]) for _key in di])
+                if n == len(keys) - 1:
+                    di = di[k]
+                    return di if not isinstance(di, dict) else deep_tally(di, (None,))
+                if k not in di:
+                    return 0
+                di = di[k]
+            return 0
+        return deep_tally(self.candidates, (candidate, source, precinct, vote_type))
+
+    def get_precinct(self, source: str, precinct: Hashable):
+        """ build a precinct dict from a race and source"""
+        rv = {}
+        for candidate in self.candidates:
+            rv[candidate] = self.candidates[candidate][source][precinct]
+        return rv
