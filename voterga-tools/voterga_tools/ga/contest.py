@@ -1,4 +1,5 @@
-# define a race - a single seat in an election
+"""  define a race - a single seat or question to be voted in an election
+"""
 from typing import List
 from pathlib import Path
 from dateutil.parser import parse as parse_date

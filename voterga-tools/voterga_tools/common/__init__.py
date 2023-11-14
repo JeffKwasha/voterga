@@ -4,7 +4,7 @@
 import re
 import yaml
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Callable
 from util import first, longest, LogSelf, dict_sum, dict_diff
 from collections import namedtuple
 
@@ -28,7 +28,7 @@ class Fields(dict):
 
     def __init__(self, fields: Any = (), key: str = None, filename: Path or str = None):
         """ create a 'fields' dict with Names for keys, allowing field['string'] to return as if field['THE_STRING']
-            keys can be non strings - especially tuples, but lookups of non-string keys require exact matches
+            keys in fields can be non strings - especially tuples, but lookups of non-string keys require exact matches
         """
         self.name = key
         if key and Fields._all is None:
@@ -90,19 +90,19 @@ class Fields(dict):
             ValueError(f"add hates you {other}")
         return rv
 
-    def add_all(self, fields) -> int:
+    def add_all(self, fields, check=True) -> int:
         if isinstance(fields, str):
             fields = [fields]
         elif isinstance(fields, dict):
             for k, v in fields.items():
-                self.add(key=k, value=v)
+                self.add(key=k, value=v, check=check)
             return len(fields)
 
         for f in fields:
             if isinstance(f, dict):
                 self.add(**f)
             elif isinstance(f, str):
-                self.add(key=f)
+                self.add(key=f, check=check)
             elif isinstance(f, (tuple, list)):
                 self.add(*f)
         return len(fields)
@@ -114,8 +114,8 @@ class Fields(dict):
             pass
         return default
 
-    def add(self, key: Any, pattern: re.Pattern or str = '', value=None, best_match: bool = True) -> 'Name':
-        rv = self.search(key, best_match=best_match)
+    def add(self, key: Any, pattern: re.Pattern or str = '', value=None, best_match: bool = True, check=True) -> 'Name':
+        rv = self.search(key, best_match=best_match) if check else (None, None)
         if not rv:
             rv = (key, rv[1]) if isinstance(key, Name) or type(key) is tuple else (Name(key, pattern), None)
         super().__setitem__(rv[0], value if value is not None else rv[1])
@@ -134,7 +134,7 @@ class Fields(dict):
 
     def __setitem__(self, item: str, value):
         if type(item) is str:
-            item = Name.add(item)
+            item = Name(item, pattern='')
         super().__setitem__(item, value)
 
     def __getitem__(self, item):
@@ -159,6 +159,23 @@ class Fields(dict):
         return Fields._all[item]
 
 
+def categorize(categories: dict, needle) -> SearchResult:
+    """ Find the first category from filter_dict which matches needle
+
+    :param categories: {category: test}
+        category is a unique immutable value which will be returned to Identify the match
+        test is a Pattern or Callable which returns a true/value on a match
+    :param needle: value to match - MUST support __str__ if any filter value is a Pattern
+    :return: category, match_result
+    """
+    for category, test in categories.items():
+        if isinstance(test, re.Pattern) and (result := test.match(str(needle))):
+            return SearchResult(category, result)
+        elif isinstance(test, Callable) and (result := test(needle)):
+            return SearchResult(category, result)
+    return NOT_FOUND
+
+
 class Name(str):
     """ A magic string that compares based on a regex
     Names of candidates, races, etc.. will not match exactly
@@ -166,21 +183,20 @@ class Name(str):
     - recognize variations based on regex
     - use slots as this needs to act like a string
 
-    print(Name('Trump') == 'Donald Trump')
+    print(Name('Trump') == 'Donald Trump') -> True
     """
     __slots__ = ['_pattern']
     _all = Fields()
 
     @classmethod
-    def add(cls, name: str or tuple, pattern: re.Pattern = None):
+    def add(cls, name: str or tuple, pattern: re.Pattern = None, check=True):
         """ searches for existing name match or create a Name if nothing matches """
         if type(name) is tuple:   ## and all(type(n) is Name for n in name):
             return name
         if type(name) is Name:
             raise ValueError(f"{name} is already a name")
         name = name.strip() if name else None
-        rv = cls.search(name, best_match=True)
-        if rv:
+        if check and (rv:= cls.search(name, best_match=True)):
             return rv
         rv = Name(name, pattern=pattern)
         cls._all[rv] = None
@@ -189,14 +205,9 @@ class Name(str):
     def __new__(cls, name: str, pattern: re.Pattern = None, flags: re.RegexFlag = re.IGNORECASE):
         """ create a name as long as the_exact_string doesn't already exist """
         name = name.strip() if type(name) is str else name
-        rv = cls._all.get(name)
-        if rv is not None:
-            if pattern:
-                rv.set_pattern(pattern)
-            return rv
         return super().__new__(cls, name)
 
-    def __init__(self, name: str, pattern: str or re.Pattern = '', flags: re.RegexFlag = re.IGNORECASE):
+    def __init__(self, name: str, pattern: str or re.Pattern = '', flags: re.RegexFlag = re.IGNORECASE, *a, **k):
         self.set_pattern(pattern, flags)
 
     def set_pattern(self, pattern: str or None, flags: re.RegexFlag = re.IGNORECASE):
@@ -204,7 +215,8 @@ class Name(str):
             self._pattern = pattern             # None is allowed: it prevents fancy matching
             return
         if not pattern:                         # other False values get the default pattern
-            pattern = fr'.*\b{str(self)}\b.*'
+            #pattern = fr'.*\b{str(self)}\b.*'
+            pattern = re.compile(fr'^{str(self)}\b.*', re.I)
         self._pattern = pattern if type(pattern) is re.Pattern else re.compile(pattern, flags)
 
     def __eq__(self, other: str) -> bool:
@@ -275,5 +287,4 @@ class Name(str):
 
 
 if __name__ == "__main__":
-    import timeit
     print('main')

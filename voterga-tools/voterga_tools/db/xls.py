@@ -2,7 +2,6 @@
 import logging
 from pathlib import Path
 from util import LogSelf
-from db import Name
 
 # https://xlrd.readthedocs.io/en/latest/ (old xls)
 # https://openpyxl.readthedocs.io/en/stable/ (new xlsx)
@@ -19,6 +18,16 @@ class Xlsx(LogSelf):
         self._max_column = None
         self._row_names = []
         self.wb: Workbook = load_workbook(filename=filename, read_only=read_only)
+
+    @property
+    def worksheets(self):
+        return self.wb.worksheets
+
+    @property
+    def column_names(self, sheet: str) -> list[str]:
+        sheet: Worksheet = self.wb[sheet]
+        sheet.values
+        return list()
 
     @property
     def max_column(self) -> int:
